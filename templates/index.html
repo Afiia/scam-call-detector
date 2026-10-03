@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scam call detector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #eef1f5;
+    --paper: #ffffff;
+    --ink: #0f1f3d;
+    --muted: #5b677d;
+    --line: #dde3ec;
+    --teal: #0e7c86;
+    --safe: #2f7d4f;
+    --warn: #b7791f;
+    --fraud: #b42318;
+    --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans); line-height: 1.55; }
+
+  header { background: var(--ink); color: #fff; padding: 56px 20px 112px; }
+  .wrap { max-width: 680px; margin: 0 auto; }
+  .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; color: #8fd3d9; font-weight: 500; font-size: 0.95rem; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(2rem, 5vw, 2.7rem); line-height: 1.15; margin: 0 0 12px; letter-spacing: -0.01em; }
+  header p { margin: 0; color: #b9c4d8; max-width: 52ch; }
+
+  main { max-width: 680px; margin: -64px auto 48px; padding: 0 20px; }
+  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 32px rgba(15, 31, 61, 0.10); }
+
+  .recorder { padding: 36px 28px 28px; text-align: center; }
+  .rec-wrap { position: relative; width: 104px; height: 104px; margin: 0 auto 16px; }
+  .ring { position: absolute; inset: 0; border-radius: 50%; background: var(--teal); opacity: 0.18; transform: scale(calc(1 + var(--level, 0) * 0.45)); transition: transform 80ms linear; }
+  #recordBtn { position: absolute; inset: 8px; border-radius: 50%; border: 0; background: var(--teal); color: #fff; cursor: pointer; display: grid; place-items: center; transition: background 0.2s; }
+  #recordBtn:hover { background: #0b6770; }
+  #recordBtn.live { background: var(--fraud); }
+  #recordBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+  #recordBtn:focus-visible, .link:focus-visible { outline: 3px solid #7cc3c9; outline-offset: 3px; }
+  #recordBtn .stop { display: none; width: 24px; height: 24px; border-radius: 4px; background: #fff; }
+  #recordBtn.live .stop { display: block; }
+  #recordBtn.live .mic { display: none; }
+  #timer { font-family: var(--serif); font-size: 1.5rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+  #hint { color: var(--muted); margin: 2px 0 18px; min-height: 1.5em; }
+  .link { background: none; border: 0; padding: 4px 2px; font: inherit; color: var(--teal); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .link:disabled { opacity: 0.45; cursor: not-allowed; }
+  input[type=file] { display: none; }
+
+  .spinner { display: none; width: 18px; height: 18px; margin: 0 auto 10px; border: 2px solid var(--line); border-top-color: var(--teal); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  .busy .spinner { display: block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #result { display: none; margin-top: 20px; padding: 28px; }
+  .meter { display: flex; gap: 6px; margin-bottom: 8px; }
+  .seg { flex: 1; height: 8px; border-radius: 4px; background: var(--line); transition: background 0.3s; }
+  .labels { display: flex; gap: 6px; font-size: 0.85rem; color: var(--muted); margin-bottom: 22px; }
+  .labels span { flex: 1; }
+  .labels span.on { color: var(--ink); font-weight: 600; }
+  #verdict { font-family: var(--serif); font-size: 1.9rem; line-height: 1.2; margin: 0 0 8px; }
+  #advice { margin: 0 0 26px; color: var(--muted); }
+  .safe #verdict { color: var(--safe); }
+  .warn #verdict { color: var(--warn); }
+  .fraud #verdict { color: var(--fraud); }
+  .error #verdict { color: var(--ink); }
+  h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 8px; }
+  #transcript { background: var(--bg); border-radius: 10px; padding: 14px 16px; white-space: pre-wrap; word-break: break-word; }
+  mark.f { background: #fbd9d5; color: var(--fraud); border-radius: 3px; padding: 0 3px; font-weight: 600; }
+  mark.s { background: #fbebc8; color: #8a5a10; border-radius: 3px; padding: 0 3px; font-weight: 600; }
+  #flagCount { color: var(--muted); font-size: 0.9rem; margin: 10px 0 0; }
+
+  footer { text-align: center; color: var(--muted); font-size: 0.85rem; padding: 0 20px 36px; }
+  @media (prefers-reduced-motion: reduce) { .ring, .seg, .spinner { transition: none; animation: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
+      Scam call detector
+    </div>
+    <h1>Check a call before you trust it</h1>
+    <p>Record a call or upload a recording. We transcribe it and flag phrases scammers use to steal money and codes.</p>
+  </div>
+</header>
+
+<main>
+  <section class="card recorder" id="panel">
+    <div class="rec-wrap">
+      <div class="ring" id="ring"></div>
+      <button id="recordBtn" type="button" aria-label="Start recording">
+        <svg class="mic" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        <span class="stop"></span>
+      </button>
+    </div>
+    <div id="timer">00:00</div>
+    <p id="hint" role="status" aria-live="polite">Tap the microphone to start recording.</p>
+    <div class="spinner" aria-hidden="true"></div>
+    <button class="link" id="uploadBtn" type="button">Upload an audio file instead</button>
+    <input id="fileInput" type="file" accept="audio/*">
+  </section>
+
+  <section class="card" id="result" aria-live="polite">
+    <div class="meter" aria-hidden="true"><div class="seg" id="s1"></div><div class="seg" id="s2"></div><div class="seg" id="s3"></div></div>
+    <div class="labels" aria-hidden="true"><span id="l1">Safe</span><span id="l2">Suspicious</span><span id="l3">Fraud</span></div>
+    <p id="verdict"></p>
+    <p id="advice"></p>
+    <h2>Transcript</h2>
+    <div id="transcript"></div>
+    <p id="flagCount"></p>
+  </section>
+</main>
+
+<footer>Runs on your own computer. Audio is deleted after it is analyzed.</footer>
+
+<script>
+  var FRAUD_WORDS = ["share otp", "otp", "cvv", "pin"];
+  var SUSP_WORDS = ["account blocked", "bank", "kyc", "urgent"];
+
+  var recordBtn = document.getElementById("recordBtn");
+  var uploadBtn = document.getElementById("uploadBtn");
+  var fileInput = document.getElementById("fileInput");
+  var panel = document.getElementById("panel");
+  var hint = document.getElementById("hint");
+  var timerEl = document.getElementById("timer");
+  var ring = document.getElementById("ring");
+  var resultEl = document.getElementById("result");
+
+  var recorder = null, chunks = [], stream = null;
+  var audioCtx = null, rafId = null, tickId = null, startedAt = 0;
+
+  function fmt(s) { return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
+
+  function setBusy(b) {
+    panel.classList.toggle("busy", b);
+    recordBtn.disabled = b;
+    uploadBtn.disabled = b;
+  }
+
+  function startMeter() {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      var src = audioCtx.createMediaStreamSource(stream);
+      var an = audioCtx.createAnalyser();
+      an.fftSize = 256;
+      src.connect(an);
+      var buf = new Uint8Array(an.fftSize);
+      (function loop() {
+        an.getByteTimeDomainData(buf);
+        var sum = 0;
+        for (var i = 0; i < buf.length; i++) { var v = (buf[i] - 128) / 128; sum += v * v; }
+        ring.style.setProperty("--level", Math.min(1, Math.sqrt(sum / buf.length) * 4));
+        rafId = requestAnimationFrame(loop);
+      })();
+    } catch (e) {}
+  }
+
+  function stopMeter() {
+    if (rafId) cancelAnimationFrame(rafId);
+    if (audioCtx) audioCtx.close();
+    ring.style.setProperty("--level", 0);
+    rafId = audioCtx = null;
+  }
+
+  function esc(w) { return w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+  function renderTranscript(text) {
+    var box = document.getElementById("transcript");
+    box.textContent = "";
+    if (!text || !text.trim()) { box.textContent = "No speech was detected in this audio."; return 0; }
+    var all = FRAUD_WORDS.concat(SUSP_WORDS);
+    var re = new RegExp("\\b(" + all.map(esc).join("|") + ")\\b", "gi");
+    var parts = text.split(re), count = 0;
+    parts.forEach(function (p, i) {
+      if (i % 2 === 0) { box.appendChild(document.createTextNode(p)); return; }
+      var m = document.createElement("mark");
+      m.className = FRAUD_WORDS.indexOf(p.toLowerCase()) !== -1 ? "f" : "s";
+      m.textContent = p;
+      box.appendChild(m);
+      count++;
+    });
+    return count;
+  }
+
+  function showResult(data) {
+    var risk = (data.risk || "").toUpperCase();
+    var level = risk.indexOf("FRAUD") !== -1 ? "fraud" : risk.indexOf("SUSPICIOUS") !== -1 ? "warn" : risk.indexOf("SAFE") !== -1 ? "safe" : "error";
+    var info = {
+      fraud: ["Likely fraud", "Do not share any OTP, PIN or CVV. Hang up and call your bank using the number printed on your card.", "var(--fraud)", 3],
+      warn: ["Suspicious call", "Be careful. Do not act on urgent requests. Contact the company through its official website or app.", "var(--warn)", 2],
+      safe: ["No scam signs found", "No known scam phrases were detected. Stay alert if the caller asks for money or codes.", "var(--safe)", 1],
+      error: ["Could not analyze", data.text || "Something went wrong on the server.", "var(--line)", 0]
+    }[level];
+
+    resultEl.className = "card " + level;
+    resultEl.style.display = "block";
+    document.getElementById("verdict").textContent = info[0];
+    document.getElementById("advice").textContent = info[1];
+    for (var i = 1; i <= 3; i++) {
+      document.getElementById("s" + i).style.background = i <= info[3] ? info[2] : "";
+      document.getElementById("l" + i).className = i === info[3] ? "on" : "";
+    }
+    var flagEl = document.getElementById("flagCount");
+    if (level === "error") {
+      document.getElementById("transcript").textContent = "No transcript available.";
+      flagEl.textContent = "";
+    } else {
+      var n = renderTranscript(data.text);
+      flagEl.textContent = n ? n + " flagged " + (n === 1 ? "phrase" : "phrases") + " highlighted above." : "";
+    }
+    resultEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function sendAudio(blob, name) {
+    var form = new FormData();
+    form.append("audio", blob, name);
+    setBusy(true);
+    hint.textContent = "Analyzing the audio. This can take a few seconds.";
+    resultEl.style.display = "none";
+    fetch("/process_audio", { method: "POST", body: form })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { showResult(d); hint.textContent = "Done. Record or upload another call any time."; })
+      .catch(function (e) { hint.textContent = "Could not reach the server: " + e.message; })
+      .then(function () { setBusy(false); });
+  }
+
+  recordBtn.addEventListener("click", function () {
+    if (recorder && recorder.state === "recording") { recorder.stop(); return; }
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+      hint.textContent = "This browser cannot record. Upload an audio file instead.";
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (s) {
+      stream = s; chunks = [];
+      recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = function (e) { if (e.data.size) chunks.push(e.data); };
+      recorder.onstop = function () {
+        clearInterval(tickId); stopMeter();
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        recordBtn.classList.remove("live");
+        recordBtn.setAttribute("aria-label", "Start recording");
+        sendAudio(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }), "recording.wav");
+      };
+      recorder.start();
+      startMeter();
+      startedAt = Date.now();
+      timerEl.textContent = "00:00";
+      tickId = setInterval(function () { timerEl.textContent = fmt(Math.floor((Date.now() - startedAt) / 1000)); }, 250);
+      recordBtn.classList.add("live");
+      recordBtn.setAttribute("aria-label", "Stop recording and analyze");
+      hint.textContent = "Recording. Tap again to stop and analyze.";
+    }).catch(function () {
+      hint.textContent = "Microphone access was blocked. Allow it in the address bar and try again.";
+    });
+  });
+
+  uploadBtn.addEventListener("click", function () { fileInput.click(); });
+  fileInput.addEventListener("change", function () {
+    var f = fileInput.files[0];
+    if (f) sendAudio(f, f.name);
+    fileInput.value = "";
+  });
+</script>
+</body>
+</html>
